@@ -704,3 +704,53 @@ function testDateCalculation(period, weekNumber, dayOfWeek) {
     };
   }
 }
+
+/**
+ * Batch update staff, room, day, time for multiple records by UID
+ * changes: [{ uid, staff, room, day, time, period, week }]
+ */
+function batchUpdateFields(changes) {
+  try {
+    const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
+    const data = sheet.getRange(CONFIG.DATA_RANGE).getValues();
+    let updated = 0;
+    changes.forEach(change => {
+      const { uid, staff, room, day, time, period, week } = change;
+      let targetRow = -1;
+      for (let i = 0; i < data.length; i++) {
+        if (data[i][16] && data[i][16].toString().trim() === uid.toString().trim()) {
+          targetRow = i;
+          break;
+        }
+      }
+      if (targetRow === -1) return;
+      const actualRow = targetRow + 2;
+      if (staff !== undefined) sheet.getRange(actualRow, 12).setValue(staff);
+      if (room !== undefined) sheet.getRange(actualRow, 13).setValue(room);
+      if (day !== undefined) sheet.getRange(actualRow, 14).setValue(day);
+      if (time !== undefined) sheet.getRange(actualRow, 15).setValue(time);
+      // If day is set, calculate and set date; if day is cleared, clear date
+      if (day !== undefined) {
+        if (!day) {
+          sheet.getRange(actualRow, 16).setValue('');
+        } else if (period && week) {
+          const dateResponse = calculateDate(period, week, day);
+          if (dateResponse.success) {
+            sheet.getRange(actualRow, 16).setValue(dateResponse.formattedDate);
+          }
+        }
+      }
+      updated++;
+    });
+    return {
+      success: true,
+      updated: updated,
+      total: changes.length
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}

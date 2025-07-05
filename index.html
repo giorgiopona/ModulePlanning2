@@ -656,15 +656,15 @@
             const tableBody = renderWeekColoredRows(groupSessions);
             html += `
               <div class="card module-card mt-3">
-                <div class="card-header bg-light group-header" style="cursor: pointer;" onclick="toggleGroup('${groupId}')">
-                  <h5 class="mb-0 d-flex justify-content-between align-items-center">
+                <div class="card-header bg-light group-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleGroup('${groupId}')">
+                  <h5 class="mb-0 d-flex align-items-center">
                     <span>
                       <i class="fas fa-users"></i> Group: ${group}
                       <span class="badge badge-primary ml-2">${groupSessions.length} sessions</span>
                       <span class="badge badge-info ml-1">${groupHours} hours</span>
                     </span>
-                    <i class="fas fa-chevron-down" id="icon-${groupId}"></i>
                   </h5>
+                  <button class="btn btn-sm btn-outline-success ml-2" type="button" onclick="event.stopPropagation(); applyToAllWeeks('${groupId}', '${group}');">Apply to All Weeks</button>
                 </div>
                 <div class="card-body p-0 group-content" id="${groupId}">
                   <div class="table-responsive">
@@ -1127,6 +1127,67 @@
           cell.removeEventListener('click', handleCellClick);
           cell.addEventListener('click', handleCellClick);
         });
+      }
+
+      function applyToAllWeeks(groupId, groupName) {
+        // Find the table body for this group
+        const groupDiv = document.getElementById(groupId);
+        if (!groupDiv) return;
+        const tbody = groupDiv.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        // Map: eventOrder -> week 1 row data
+        const week1Map = {};
+        rows.forEach(row => {
+          const week = row.cells[1].textContent.trim();
+          const eventOrder = row.cells[2].textContent.trim();
+          if (week === '1') {
+            week1Map[eventOrder] = {
+              staff: row.cells[5].textContent.trim(),
+              room: row.cells[6].textContent.trim(),
+              day: row.cells[7].textContent.trim(),
+              time: row.cells[8].textContent.trim()
+            };
+          }
+        });
+        // Collect all changes for batch update
+        const changes = [];
+        rows.forEach(row => {
+          const week = row.cells[1].textContent.trim();
+          const eventOrder = row.cells[2].textContent.trim();
+          if (week !== '1' && week1Map[eventOrder]) {
+            const uid = row.querySelector('[data-uid]')?.getAttribute('data-uid');
+            if (!uid) return;
+            // Update UI
+            row.cells[5].textContent = week1Map[eventOrder].staff;
+            row.cells[6].textContent = week1Map[eventOrder].room;
+            row.cells[7].textContent = week1Map[eventOrder].day;
+            row.cells[8].textContent = week1Map[eventOrder].time;
+            // Update date cell if day is set
+            let calculatedDate = '';
+            if (week1Map[eventOrder].day) {
+              const period = row.cells[0].textContent.trim();
+              calculatedDate = calculateDateFrontend(period, week, week1Map[eventOrder].day);
+            }
+            row.cells[row.cells.length - 1].textContent = calculatedDate;
+            // Add to batch changes
+            changes.push({
+              uid: uid,
+              staff: week1Map[eventOrder].staff,
+              room: week1Map[eventOrder].room,
+              day: week1Map[eventOrder].day,
+              time: week1Map[eventOrder].time,
+              period: row.cells[0].textContent.trim(),
+              week: week
+            });
+          }
+        });
+        // Batch save
+        if (changes.length > 0) {
+          google.script.run.withFailureHandler(function(error) {
+            showError('Error saving data: ' + error);
+          }).batchUpdateFields(changes);
+        }
       }
     </script>
   </body>
