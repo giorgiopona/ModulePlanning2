@@ -87,102 +87,53 @@ function getTimetableData() {
 }
 
 /**
- * Get unique modules from the Timetable sheet
+ * Get unique modules with their teaching periods from the Timetable sheet
  */
 function getUniqueModules() {
   try {
-    // Check if CONFIG is available
-    if (typeof CONFIG === 'undefined') {
-      return {
-        success: false,
-        error: 'Configuration not loaded'
-      };
-    }
-    
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
-    if (!sheet) {
-      return {
-        success: false,
-        error: 'Sheet not found: ' + CONFIG.SHEET_NAME
-      };
-    }
-    
     const data = sheet.getRange(CONFIG.DATA_RANGE).getValues();
     
-    // Debug: Log data processing steps
-    const debugInfo = {
-      totalRows: data.length,
-      nonEmptyRows: 0,
-      moduleColumnData: [],
-      uniqueModules: []
-    };
+    // Filter out empty rows and get unique {period, module} pairs (A: period, E: module)
+    const pairs = data
+      .filter(row => row.some(cell => cell !== ''))
+      .map(row => ({ period: row[0], module: row[4] }))
+      .filter(pair => pair.period && pair.module && pair.period.toString().trim() !== '' && pair.module.toString().trim() !== '');
     
-    // Filter out empty rows and get unique modules (column E, index 4)
-    const modules = data
-      .filter(row => {
-        const hasData = row.some(cell => cell !== '');
-        if (hasData) debugInfo.nonEmptyRows++;
-        return hasData;
-      })
-      .map(row => {
-        const moduleValue = row[4]; // Module column
-        debugInfo.moduleColumnData.push({
-          value: moduleValue,
-          type: typeof moduleValue,
-          trimmed: moduleValue ? moduleValue.toString().trim() : ''
-        });
-        return moduleValue;
-      })
-      .filter(module => {
-        const isValid = module && module.toString().trim() !== '';
-        if (isValid) debugInfo.uniqueModules.push(module.toString().trim());
-        return isValid;
-      });
-    
-    // Get unique modules - fix the deduplication
-    const uniqueModulesSet = new Set();
-    modules.forEach(module => {
-      if (module && module.toString().trim() !== '') {
-        uniqueModulesSet.add(module.toString().trim());
+    // Get unique pairs
+    const uniquePairs = [];
+    const seen = new Set();
+    pairs.forEach(pair => {
+      const key = pair.period + '||' + pair.module;
+      if (!seen.has(key)) {
+        uniquePairs.push(pair);
+        seen.add(key);
       }
     });
     
-    const uniqueModules = Array.from(uniqueModulesSet).sort();
-    
-    // Add debug info to response
-    const response = {
+    return {
       success: true,
-      modules: uniqueModules,
-      debug: {
-        ...debugInfo,
-        uniqueModulesCount: uniqueModules.length,
-        uniqueModulesList: uniqueModules
-      }
+      modules: uniquePairs
     };
-    
-    return response;
   } catch (error) {
     return {
       success: false,
-      error: error.toString(),
-      stack: error.stack
+      error: error.toString()
     };
   }
 }
 
 /**
- * Get data for a specific module
+ * Get data for a specific module and period
  */
-function getModuleData(moduleName) {
+function getModuleData(moduleName, period) {
   try {
-    // Check if CONFIG is available
     if (typeof CONFIG === 'undefined') {
       return {
         success: false,
         error: 'Configuration not loaded'
       };
     }
-    
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
     if (!sheet) {
       return {
@@ -190,28 +141,23 @@ function getModuleData(moduleName) {
         error: 'Sheet not found: ' + CONFIG.SHEET_NAME
       };
     }
-    
     const data = sheet.getRange(CONFIG.DATA_RANGE).getValues();
-    
-    // Debug: Log data processing steps
     const debugInfo = {
       requestedModule: moduleName,
+      requestedPeriod: period,
       totalRows: data.length,
       matchingRows: 0,
       sampleData: []
     };
-    
-    // Filter data for the specific module (column E, index 4)
+    // Filter data for the specific module (E, index 4) and period (A, index 0)
     const moduleData = data.filter(row => {
       const hasData = row.some(cell => cell !== '');
       if (hasData) {
-        const rowModule = row[4]; // Module column
-        const location = row[6]; // Location column (G)
-        
-        // Check if module matches and location is not "Individual (1-2-1)"
-        const matches = rowModule && rowModule.toString().trim() === moduleName;
+        const rowModule = row[4];
+        const rowPeriod = row[0];
+        const location = row[6];
+        const matches = rowModule && rowModule.toString().trim() === moduleName && rowPeriod && rowPeriod.toString().trim() === period;
         const isNotIndividual = !location || location.toString().trim() !== 'Individual (1-2-1)';
-        
         if (matches && isNotIndividual) {
           debugInfo.matchingRows++;
           if (debugInfo.sampleData.length < 3) {
@@ -229,15 +175,12 @@ function getModuleData(moduleName) {
       }
       return false;
     });
-    
     // Convert all data to strings to ensure serialization works
-    const serializedData = moduleData.map(row => 
+    const serializedData = moduleData.map(row =>
       row.map((cell, cellIndex) => {
         if (cell === null || cell === undefined) return '';
         if (cell instanceof Date) {
-          // Handle time columns (column O, index 14)
           if (cellIndex === 14) {
-            // Convert to HH:MM:SS format
             const hours = cell.getHours().toString().padStart(2, '0');
             const minutes = cell.getMinutes().toString().padStart(2, '0');
             const seconds = cell.getSeconds().toString().padStart(2, '0');
@@ -248,49 +191,37 @@ function getModuleData(moduleName) {
         return cell.toString();
       })
     );
-    
     // Group data by groups (column H, index 7)
     const groupedData = {};
     const allGroups = new Set();
-    
     serializedData.forEach(row => {
-      const group = row[7] || 'No Group'; // Groups column
+      const group = row[7] || 'No Group';
       allGroups.add(group);
-      
       if (!groupedData[group]) {
         groupedData[group] = [];
       }
       groupedData[group].push(row);
     });
-    
     // Sort groups and sessions within each group
     const sortedGroups = Array.from(allGroups).sort((a, b) => {
-      // Extract numbers from group names for numerical sorting
       const numA = parseInt(a.toString().match(/\d+/)) || 0;
       const numB = parseInt(b.toString().match(/\d+/)) || 0;
-      
       if (numA !== numB) {
-        return numA - numB; // Sort numerically
+        return numA - numB;
       }
-      
-      // If numbers are the same, sort alphabetically
       return a.toString().localeCompare(b.toString());
     });
     const organizedData = {};
-    
     sortedGroups.forEach(group => {
-      // Sort sessions within each group by week number, then by period
       organizedData[group] = groupedData[group].sort((a, b) => {
-        const weekA = parseInt(a[1]) || 0; // Week Number column
+        const weekA = parseInt(a[1]) || 0;
         const weekB = parseInt(b[1]) || 0;
         if (weekA !== weekB) return weekA - weekB;
-        
-        const periodA = a[0] || ''; // Period column
+        const periodA = a[0] || '';
         const periodB = b[0] || '';
         return periodA.localeCompare(periodB);
       });
     });
-    
     const response = {
       success: true,
       data: serializedData,
@@ -302,7 +233,6 @@ function getModuleData(moduleName) {
         groupsList: sortedGroups
       }
     };
-    
     return response;
   } catch (error) {
     return {

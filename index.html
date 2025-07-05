@@ -305,11 +305,13 @@
           <div class="row">
             <div class="col-md-6">
               <h5>Select Module:</h5>
-              <div id="module-buttons"></div>
+              <select id="moduleSelector" class="form-control" onchange="onModuleSelectorChange()">
+                <option value="">Select Module</option>
+              </select>
             </div>
             <div class="col-md-6">
               <h5>Filter by Period:</h5>
-              <select id="period-filter" class="form-control" onchange="filterByPeriod()">
+              <select id="periodFilter" class="form-control" onchange="onPeriodFilterChange()">
                 <option value="">All Periods</option>
               </select>
             </div>
@@ -342,123 +344,95 @@
         document.getElementById('sidebar').classList.toggle('toggled');
       });
 
-      // Load modules on page load
-      document.addEventListener('DOMContentLoaded', function() {
-        loadModules();
-        loadDropdownData();
-      });
+      // Store all modules with period for filtering
+      let allModulesWithPeriod = [];
+      let currentPeriod = '';
+      let currentModule = '';
 
-      function loadModules() {
-        showLoading();
-        google.script.run
-          .withSuccessHandler(function(response) {
-            hideLoading();
-            if (response && response.success) {
-              displayModuleButtons(response.modules);
-              // Show debug info if available
-              if (response.debug) {
-                console.log('Debug info:', response.debug);
-                const container = document.getElementById('module-content');
-                container.innerHTML = `
-                  <div class="card">
-                    <div class="card-header">
-                      <h5><i class="fas fa-info-circle"></i> Data Processing Info</h5>
-                    </div>
-                    <div class="card-body">
-                      <p><strong>Total rows:</strong> ${response.debug.totalRows}</p>
-                      <p><strong>Non-empty rows:</strong> ${response.debug.nonEmptyRows}</p>
-                      <p><strong>Unique modules found:</strong> ${response.debug.uniqueModulesCount || response.debug.uniqueModules.length}</p>
-                      <p><strong>Modules:</strong> ${response.debug.uniqueModulesList ? response.debug.uniqueModulesList.join(', ') : response.debug.uniqueModules.join(', ')}</p>
-                    </div>
-                  </div>
-                `;
-              }
-            } else {
-              const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
-              showError('Failed to load modules: ' + errorMsg);
-              if (response && response.stack) {
-                console.error('Stack trace:', response.stack);
-              }
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showError('Error loading modules: ' + (error.message || error));
-          })
-          .getUniqueModules();
+      // Fetch all modules (with period) and populate module selector
+      function loadModulesAndPeriods() {
+        google.script.run.withSuccessHandler(function(response) {
+          if (response.success) {
+            allModulesWithPeriod = response.modules;
+            populatePeriodFilter();
+            populateModuleSelector();
+          } else {
+            showError('Failed to load modules: ' + response.error);
+          }
+        }).getUniqueModules();
       }
 
-      function displayModuleButtons(modules) {
-        const container = document.getElementById('module-buttons');
-        container.innerHTML = '';
-        
-        modules.forEach(module => {
-          const badge = document.createElement('span');
-          badge.className = 'module-badge';
-          badge.textContent = module;
-          badge.onclick = () => loadModuleData(module);
-          container.appendChild(badge);
+      // Populate period filter dropdown
+      function populatePeriodFilter() {
+        const periodSet = new Set(allModulesWithPeriod.map(m => m.period));
+        const periodFilter = document.getElementById('periodFilter');
+        periodFilter.innerHTML = '<option value="">All Periods</option>';
+        Array.from(periodSet).sort().forEach(period => {
+          periodFilter.innerHTML += `<option value="${period}">${period}</option>`;
         });
       }
 
-      function loadModuleData(moduleName) {
-        // Update active button
-        document.querySelectorAll('.module-badge').forEach(badge => {
-          badge.classList.remove('active');
+      // Populate module selector based on current period filter
+      function populateModuleSelector() {
+        const moduleSelector = document.getElementById('moduleSelector');
+        let filteredModules = allModulesWithPeriod;
+        if (currentPeriod) {
+          filteredModules = allModulesWithPeriod.filter(m => m.period === currentPeriod);
+        }
+        moduleSelector.innerHTML = '<option value="">Select Module</option>';
+        filteredModules.forEach(m => {
+          moduleSelector.innerHTML += `<option value="${m.module}" data-period="${m.period}">[${m.period}] ${m.module}</option>`;
         });
-        event.target.classList.add('active');
+      }
 
+      // On period filter change
+      function onPeriodFilterChange() {
+        const periodFilter = document.getElementById('periodFilter');
+        currentPeriod = periodFilter.value;
+        populateModuleSelector();
+        // Optionally clear module selection and timetable
+        document.getElementById('moduleSelector').value = '';
+        clearTimetable();
+      }
+
+      // On module selector change
+      function onModuleSelectorChange() {
+        const moduleSelector = document.getElementById('moduleSelector');
+        const selectedOption = moduleSelector.options[moduleSelector.selectedIndex];
+        currentModule = moduleSelector.value;
+        const period = selectedOption.getAttribute('data-period') || currentPeriod;
+        if (currentModule && period) {
+          loadModuleTimetable(currentModule, period);
+        } else {
+          clearTimetable();
+        }
+      }
+
+      // Fetch and display timetable for selected module and period
+      function loadModuleTimetable(moduleName, period) {
         showLoading();
-        google.script.run
-          .withSuccessHandler(function(response) {
-            hideLoading();
-            if (response && response.success) {
-              // Store current data for filtering
-              currentModuleData = response.data;
-              currentModuleName = moduleName;
-              currentGroupedData = response.groupedData;
-              currentGroups = response.groups;
-              currentFilteredData = response.data;
-              
-              // Reset period filter
-              document.getElementById('period-filter').value = '';
-              
-              displayModuleData(moduleName, response.data, response.groupedData, response.groups);
-              // Show debug info if available
-              if (response.debug) {
-                console.log('Module data debug:', response.debug);
-                const container = document.getElementById('module-content');
-                const debugDiv = document.createElement('div');
-                debugDiv.className = 'card mt-3';
-                debugDiv.innerHTML = `
-                  <div class="card-header">
-                    <h6><i class="fas fa-bug"></i> Module Data Debug</h6>
-                  </div>
-                  <div class="card-body">
-                    <p><strong>Requested module:</strong> ${response.debug.requestedModule}</p>
-                    <p><strong>Total rows scanned:</strong> ${response.debug.totalRows}</p>
-                    <p><strong>Matching rows found:</strong> ${response.debug.matchingRows}</p>
-                    <p><strong>Total groups:</strong> ${response.debug.totalGroups || 'N/A'}</p>
-                    <p><strong>Groups found:</strong> ${response.debug.groupsList ? response.debug.groupsList.join(', ') : 'N/A'}</p>
-                    <p><strong>Sample data:</strong></p>
-                    <pre>${JSON.stringify(response.debug.sampleData, null, 2)}</pre>
-                  </div>
-                `;
-                container.appendChild(debugDiv);
-              }
-            } else {
-              const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
-              showError('Failed to load module data: ' + errorMsg);
-              if (response && response.stack) {
-                console.error('Stack trace:', response.stack);
-              }
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showError('Error loading module data: ' + (error.message || error));
-          })
-          .getModuleData(moduleName);
+        google.script.run.withSuccessHandler(function(response) {
+          hideLoading();
+          if (response.success) {
+            renderTimetable(response);
+          } else {
+            showError('Failed to load timetable: ' + response.error);
+          }
+        }).getModuleData(moduleName, period);
+      }
+
+      // Render timetable data
+      function renderTimetable(response) {
+        if (response.data && response.data.length > 0) {
+          displayModuleData(response.data[0][4], response.data, response.groupedData, response.groups);
+        } else {
+          document.getElementById('module-content').innerHTML = '<div class="alert alert-info">No timetable data found for this module and period.</div>';
+        }
+      }
+
+      // Clear timetable display
+      function clearTimetable() {
+        document.getElementById('module-content').innerHTML = '';
       }
 
       function renderWeekColoredRows(sessions) {
@@ -854,65 +828,6 @@
         }, 3000);
       }
 
-      function populatePeriodFilter() {
-        const filter = document.getElementById('period-filter');
-        filter.innerHTML = '<option value="">All Periods</option>';
-        
-        periodList.forEach(period => {
-          const option = document.createElement('option');
-          option.value = period;
-          option.textContent = period;
-          filter.appendChild(option);
-        });
-      }
-
-      function filterByPeriod() {
-        const selectedPeriod = document.getElementById('period-filter').value;
-        
-        if (!currentModuleData) return;
-        
-        if (selectedPeriod === '') {
-          // Show all data
-          currentFilteredData = currentModuleData;
-          displayModuleData(currentModuleName, currentModuleData, currentGroupedData, currentGroups);
-        } else {
-          // Filter by period
-          currentFilteredData = currentModuleData.filter(row => row[0] === selectedPeriod);
-          
-          // Re-group the filtered data
-          const filteredGroupedData = {};
-          const filteredGroups = [];
-          
-          currentFilteredData.forEach(row => {
-            const group = row[7] || 'No Group';
-            if (!filteredGroupedData[group]) {
-              filteredGroupedData[group] = [];
-              filteredGroups.push(group);
-            }
-            filteredGroupedData[group].push(row);
-          });
-          
-          // Sort groups numerically
-          filteredGroups.sort((a, b) => {
-            const numA = parseInt(a.toString().match(/\d+/)) || 0;
-            const numB = parseInt(b.toString().match(/\d+/)) || 0;
-            if (numA !== numB) return numA - numB;
-            return a.toString().localeCompare(b.toString());
-          });
-          
-          // Re-display the filtered data
-          if (currentFilteredData.length > 0) {
-            displayModuleData(currentModuleName, currentFilteredData, filteredGroupedData, filteredGroups);
-          } else {
-            document.getElementById('module-content').innerHTML = `
-              <div class="alert alert-info">
-                No sessions found for the selected period.
-              </div>
-            `;
-          }
-        }
-      }
-
       function debugConfiguration() {
         showLoading();
         google.script.run
@@ -936,6 +851,14 @@
           })
           .debugConfig();
       }
+
+      // Attach event listeners on DOMContentLoaded
+      window.addEventListener('DOMContentLoaded', function() {
+        loadModulesAndPeriods();
+        loadDropdownData();
+        document.getElementById('periodFilter').addEventListener('change', onPeriodFilterChange);
+        document.getElementById('moduleSelector').addEventListener('change', onModuleSelectorChange);
+      });
     </script>
   </body>
 </html> 
