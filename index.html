@@ -134,13 +134,14 @@
         text-transform: uppercase;
       }
       .timetable-table {
-        font-size: 0.9rem;
+        table-layout: fixed;
+        width: 100%;
       }
-      .timetable-table th {
-        background-color: var(--accent-color);
-        color: var(--primary-color);
-        font-weight: 600;
-        border: none;
+      .timetable-table th,
+      .timetable-table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .loading {
         text-align: center;
@@ -196,6 +197,13 @@
         position: relative;
         cursor: pointer;
         transition: background-color 0.2s ease;
+        padding: 0 !important;
+        /* min-width: 80px; */
+        /* max-width: 200px; */
+        box-sizing: border-box;
+        overflow: hidden;
+        height: 38px;
+        line-height: 38px;
       }
       
       .editable-cell:hover {
@@ -208,10 +216,15 @@
       
       .edit-dropdown {
         width: 100%;
-        padding: 4px 8px;
+        box-sizing: border-box;
+        padding: 0 8px;
         border: 1px solid var(--primary-color);
         border-radius: 4px;
         font-size: 0.9rem;
+        background: #fff;
+        height: 38px;
+        line-height: 38px;
+        margin: 0;
       }
       
       .edit-time {
@@ -220,6 +233,31 @@
         border: 1px solid var(--primary-color);
         border-radius: 4px;
         font-size: 0.9rem;
+      }
+      
+      .period-filter {
+        max-width: 200px;
+      }
+      
+      .filter-active {
+        background-color: var(--accent-color);
+        border-color: var(--primary-color);
+      }
+      
+      .table-white {
+        background-color: #ffffff;
+      }
+      
+      .table-light {
+        background-color: #f8f9fa;
+      }
+      
+      .table-light:hover {
+        background-color: #e9ecef !important;
+      }
+      
+      .table-white:hover {
+        background-color: #f8f9fa !important;
       }
       
 
@@ -264,8 +302,18 @@
         <h1><i class="fas fa-calendar-alt"></i> Module Planning</h1>
         
         <div class="module-selector">
-          <h5>Select Module:</h5>
-          <div id="module-buttons"></div>
+          <div class="row">
+            <div class="col-md-6">
+              <h5>Select Module:</h5>
+              <div id="module-buttons"></div>
+            </div>
+            <div class="col-md-6">
+              <h5>Filter by Period:</h5>
+              <select id="period-filter" class="form-control" onchange="filterByPeriod()">
+                <option value="">All Periods</option>
+              </select>
+            </div>
+          </div>
           <button class="btn btn-outline-secondary btn-sm mt-2" onclick="debugConfiguration()">
             <i class="fas fa-bug"></i> Debug Configuration
           </button>
@@ -365,6 +413,16 @@
           .withSuccessHandler(function(response) {
             hideLoading();
             if (response && response.success) {
+              // Store current data for filtering
+              currentModuleData = response.data;
+              currentModuleName = moduleName;
+              currentGroupedData = response.groupedData;
+              currentGroups = response.groups;
+              currentFilteredData = response.data;
+              
+              // Reset period filter
+              document.getElementById('period-filter').value = '';
+              
               displayModuleData(moduleName, response.data, response.groupedData, response.groups);
               // Show debug info if available
               if (response.debug) {
@@ -401,6 +459,34 @@
             showError('Error loading module data: ' + (error.message || error));
           })
           .getModuleData(moduleName);
+      }
+
+      function renderWeekColoredRows(sessions) {
+        let html = '';
+        sessions.forEach(row => {
+          html += `
+            <tr style="background-color: #fff;">
+              <td>${row[0] || '-'}</td>
+              <td>${row[1] || '-'}</td>
+              <td>${row[2] || '-'}</td>
+              <td>${row[5] || '-'}</td>
+              <td>${row[8] || '-'}</td>
+              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 11, 'staff')" data-original="${row[11] || ''}">
+                ${row[11] || '-'}
+              </td>
+              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 12, 'room')" data-original="${row[12] || ''}">
+                ${row[12] || '-'}
+              </td>
+              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 13, 'day')" data-original="${row[13] || ''}">
+                ${row[13] || '-'}
+              </td>
+              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 14, 'time')" data-original="${row[14] || ''}">
+                ${row[14] || '-'}
+              </td>
+            </tr>
+          `;
+        });
+        return html;
       }
 
       function displayModuleData(moduleName, data, groupedData, groups) {
@@ -450,11 +536,11 @@
 
         // Add grouped sections
         if (groupedData && groups) {
-          groups.forEach((group, index) => {
+          groups.forEach(group => {
             const groupSessions = groupedData[group];
             const groupHours = groupSessions.reduce((sum, row) => sum + (parseFloat(row[8]) || 0), 0);
-            const groupId = `group-${index}`;
-            
+            const groupId = `group-${group}`;
+            const tableBody = renderWeekColoredRows(groupSessions);
             html += `
               <div class="card module-card mt-3">
                 <div class="card-header bg-light group-header" style="cursor: pointer;" onclick="toggleGroup('${groupId}')">
@@ -484,27 +570,7 @@
                         </tr>
                       </thead>
                       <tbody>
-                        ${groupSessions.map((row, rowIndex) => `
-                          <tr>
-                            <td>${row[0] || '-'}</td>
-                            <td>${row[1] || '-'}</td>
-                            <td>${row[2] || '-'}</td>
-                            <td>${row[5] || '-'}</td>
-                            <td>${row[8] || '-'}</td>
-                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 11, 'staff')" data-original="${row[11] || ''}">
-                              ${row[11] || '-'}
-                            </td>
-                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 12, 'room')" data-original="${row[12] || ''}">
-                              ${row[12] || '-'}
-                            </td>
-                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 13, 'day')" data-original="${row[13] || ''}">
-                              ${row[13] || '-'}
-                            </td>
-                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 14, 'time')" data-original="${row[14] || ''}">
-                              ${row[14] || '-'}
-                            </td>
-                          </tr>
-                        `).join('')}
+                        ${tableBody}
                       </tbody>
                     </table>
                   </div>
@@ -514,6 +580,7 @@
           });
         } else {
           // Fallback to original table if no grouped data
+          const tableBody = renderWeekColoredRows(data);
           html += `
             <div class="card module-card mt-3">
               <div class="card-body">
@@ -535,20 +602,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      ${data.map(row => `
-                        <tr>
-                          <td>${row[0] || '-'}</td>
-                          <td>${row[1] || '-'}</td>
-                          <td>${row[2] || '-'}</td>
-                          <td>${row[5] || '-'}</td>
-                          <td>${row[7] || '-'}</td>
-                          <td>${row[8] || '-'}</td>
-                          <td>${row[11] || '-'}</td>
-                          <td>${row[12] || '-'}</td>
-                          <td>${row[13] || '-'}</td>
-                          <td>${row[14] || '-'}</td>
-                        </tr>
-                      `).join('')}
+                      ${tableBody}
                     </tbody>
                   </table>
                 </div>
@@ -596,6 +650,9 @@
       // Global variables for dropdown data
       let staffList = [];
       let roomList = [];
+      let periodList = [];
+      let currentModuleData = null;
+      let currentFilteredData = null;
       const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
       function loadDropdownData() {
@@ -616,14 +673,30 @@
             }
           })
           .getRoomList();
+          
+        // Load period list
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response && response.success) {
+              periodList = response.periods;
+              populatePeriodFilter();
+            }
+          })
+          .getUniquePeriods();
       }
 
-      function editCell(cell, rowIndex, columnIndex, fieldType) {
+      function editCell(cell, uid, columnIndex, fieldType) {
         const originalValue = cell.getAttribute('data-original') || '';
         const currentValue = cell.textContent.trim();
         
         // If already editing, don't do anything
         if (cell.classList.contains('editing')) return;
+        
+        // Check if UID is valid
+        if (!uid || uid === '') {
+          showError('Cannot edit: No UID found for this record');
+          return;
+        }
         
         cell.classList.add('editing');
         
@@ -663,7 +736,7 @@
           }
           
           if (newValue !== originalValue) {
-            saveCell(cell, rowIndex, columnIndex, newValue);
+            saveCell(cell, uid, columnIndex, newValue);
           } else {
             cancelEdit(cell, originalValue);
           }
@@ -682,7 +755,7 @@
               }
             }
             
-            saveCell(cell, rowIndex, columnIndex, newValue);
+            saveCell(cell, uid, columnIndex, newValue);
           } else if (e.key === 'Escape') {
             cancelEdit(cell, originalValue);
           }
@@ -696,12 +769,7 @@
         const select = document.createElement('select');
         select.className = className;
         
-        // Add empty option
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = '-- Select --';
-        select.appendChild(emptyOption);
-        
+        // Remove the empty option for a better UX
         // Add options
         options.forEach(option => {
           const optionElement = document.createElement('option');
@@ -736,7 +804,7 @@
         return input;
       }
 
-      function saveCell(cell, rowIndex, columnIndex, newValue) {
+      function saveCell(cell, uid, columnIndex, newValue) {
         google.script.run
           .withSuccessHandler(function(response) {
             if (response && response.success) {
@@ -755,7 +823,7 @@
           .withFailureHandler(function(error) {
             showError('Error saving data: ' + error);
           })
-          .saveEditedData(rowIndex, columnIndex, newValue);
+          .saveEditedData(uid, columnIndex, newValue);
       }
 
       function cancelEdit(cell, originalValue) {
@@ -784,6 +852,65 @@
             successDiv.remove();
           }
         }, 3000);
+      }
+
+      function populatePeriodFilter() {
+        const filter = document.getElementById('period-filter');
+        filter.innerHTML = '<option value="">All Periods</option>';
+        
+        periodList.forEach(period => {
+          const option = document.createElement('option');
+          option.value = period;
+          option.textContent = period;
+          filter.appendChild(option);
+        });
+      }
+
+      function filterByPeriod() {
+        const selectedPeriod = document.getElementById('period-filter').value;
+        
+        if (!currentModuleData) return;
+        
+        if (selectedPeriod === '') {
+          // Show all data
+          currentFilteredData = currentModuleData;
+          displayModuleData(currentModuleName, currentModuleData, currentGroupedData, currentGroups);
+        } else {
+          // Filter by period
+          currentFilteredData = currentModuleData.filter(row => row[0] === selectedPeriod);
+          
+          // Re-group the filtered data
+          const filteredGroupedData = {};
+          const filteredGroups = [];
+          
+          currentFilteredData.forEach(row => {
+            const group = row[7] || 'No Group';
+            if (!filteredGroupedData[group]) {
+              filteredGroupedData[group] = [];
+              filteredGroups.push(group);
+            }
+            filteredGroupedData[group].push(row);
+          });
+          
+          // Sort groups numerically
+          filteredGroups.sort((a, b) => {
+            const numA = parseInt(a.toString().match(/\d+/)) || 0;
+            const numB = parseInt(b.toString().match(/\d+/)) || 0;
+            if (numA !== numB) return numA - numB;
+            return a.toString().localeCompare(b.toString());
+          });
+          
+          // Re-display the filtered data
+          if (currentFilteredData.length > 0) {
+            displayModuleData(currentModuleName, currentFilteredData, filteredGroupedData, filteredGroups);
+          } else {
+            document.getElementById('module-content').innerHTML = `
+              <div class="alert alert-info">
+                No sessions found for the selected period.
+              </div>
+            `;
+          }
+        }
       }
 
       function debugConfiguration() {

@@ -206,21 +206,26 @@ function getModuleData(moduleName) {
       const hasData = row.some(cell => cell !== '');
       if (hasData) {
         const rowModule = row[4]; // Module column
+        const location = row[6]; // Location column (G)
+        
+        // Check if module matches and location is not "Individual (1-2-1)"
         const matches = rowModule && rowModule.toString().trim() === moduleName;
-        if (matches) {
+        const isNotIndividual = !location || location.toString().trim() !== 'Individual (1-2-1)';
+        
+        if (matches && isNotIndividual) {
           debugInfo.matchingRows++;
           if (debugInfo.sampleData.length < 3) {
             debugInfo.sampleData.push({
-              period: row[0] ? row[0].toString() : '',
-              week: row[1] ? row[1].toString() : '',
-              topic: row[5] ? row[5].toString() : '',
-              location: row[6] ? row[6].toString() : '',
-              hours: row[8] ? row[8].toString() : '',
-              staff: row[11] ? row[11].toString() : ''
+              period: row[0],
+              week: row[1],
+              topic: row[5],
+              location: row[6],
+              hours: row[8],
+              staff: row[11]
             });
           }
         }
-        return matches;
+        return matches && isNotIndividual;
       }
       return false;
     });
@@ -373,21 +378,75 @@ function getRoomList() {
 }
 
 /**
- * Save edited data to the spreadsheet
+ * Save edited data to the spreadsheet using UID
  */
-function saveEditedData(rowIndex, columnIndex, newValue) {
+function saveEditedData(uid, columnIndex, newValue) {
   try {
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
     
+    // Find the row with the matching UID (column Q, index 16)
+    const data = sheet.getRange(CONFIG.DATA_RANGE).getValues();
+    let targetRow = -1;
+    
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][16] && data[i][16].toString().trim() === uid.toString().trim()) {
+        targetRow = i;
+        break;
+      }
+    }
+    
+    if (targetRow === -1) {
+      return {
+        success: false,
+        error: 'Record with UID ' + uid + ' not found'
+      };
+    }
+    
     // Convert from 0-based index to 1-based and add header row offset
-    const actualRow = rowIndex + 2; // +2 because we start from A2 and rowIndex is 0-based
+    const actualRow = targetRow + 2; // +2 because we start from A2 and targetRow is 0-based
     const actualColumn = columnIndex + 1; // +1 because columnIndex is 0-based
     
     sheet.getRange(actualRow, actualColumn).setValue(newValue);
     
     return {
       success: true,
-      message: 'Data saved successfully'
+      message: 'Data saved successfully for UID: ' + uid
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Get unique periods from the Timetable sheet
+ */
+function getUniquePeriods() {
+  try {
+    const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) {
+      return {
+        success: false,
+        error: 'Sheet not found: ' + CONFIG.SHEET_NAME
+      };
+    }
+    
+    const data = sheet.getRange(CONFIG.DATA_RANGE).getValues();
+    
+    // Get unique periods (column A, index 0)
+    const periods = data
+      .filter(row => row.some(cell => cell !== ''))
+      .map(row => row[0]) // Period column
+      .filter(period => period && period.toString().trim() !== '');
+    
+    // Get unique periods and sort them
+    const uniquePeriods = [...new Set(periods)].sort();
+    
+    return {
+      success: true,
+      periods: uniquePeriods
     };
   } catch (error) {
     return {
