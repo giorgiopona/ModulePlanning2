@@ -173,6 +173,56 @@
         background-color: var(--primary-color);
         color: white;
       }
+      
+      .group-content {
+        transition: all 0.3s ease;
+        overflow: hidden;
+      }
+      
+      .group-content.collapsed {
+        max-height: 0;
+        padding: 0;
+      }
+      
+      .group-header {
+        transition: background-color 0.3s ease;
+      }
+      
+      .group-header:hover {
+        background-color: var(--accent-color) !important;
+      }
+      
+      .editable-cell {
+        position: relative;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      }
+      
+      .editable-cell:hover {
+        background-color: var(--accent-color) !important;
+      }
+      
+      .editable-cell.editing {
+        background-color: #fff3cd !important;
+      }
+      
+      .edit-dropdown {
+        width: 100%;
+        padding: 4px 8px;
+        border: 1px solid var(--primary-color);
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+      
+      .edit-time {
+        width: 100%;
+        padding: 4px 8px;
+        border: 1px solid var(--primary-color);
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+      
+
 
       @media (max-width: 768px) {
         #sidebar {
@@ -221,6 +271,10 @@
           </button>
         </div>
 
+        <div id="dropdown-data" style="display: none;">
+          <!-- Dropdown data will be loaded here -->
+        </div>
+
         <div id="loading" class="loading" style="display: none;">
           <i class="fas fa-spinner fa-spin fa-2x"></i>
           <p>Loading module data...</p>
@@ -243,6 +297,7 @@
       // Load modules on page load
       document.addEventListener('DOMContentLoaded', function() {
         loadModules();
+        loadDropdownData();
       });
 
       function loadModules() {
@@ -310,7 +365,7 @@
           .withSuccessHandler(function(response) {
             hideLoading();
             if (response && response.success) {
-              displayModuleData(moduleName, response.data);
+              displayModuleData(moduleName, response.data, response.groupedData, response.groups);
               // Show debug info if available
               if (response.debug) {
                 console.log('Module data debug:', response.debug);
@@ -325,6 +380,8 @@
                     <p><strong>Requested module:</strong> ${response.debug.requestedModule}</p>
                     <p><strong>Total rows scanned:</strong> ${response.debug.totalRows}</p>
                     <p><strong>Matching rows found:</strong> ${response.debug.matchingRows}</p>
+                    <p><strong>Total groups:</strong> ${response.debug.totalGroups || 'N/A'}</p>
+                    <p><strong>Groups found:</strong> ${response.debug.groupsList ? response.debug.groupsList.join(', ') : 'N/A'}</p>
                     <p><strong>Sample data:</strong></p>
                     <pre>${JSON.stringify(response.debug.sampleData, null, 2)}</pre>
                   </div>
@@ -346,7 +403,7 @@
           .getModuleData(moduleName);
       }
 
-      function displayModuleData(moduleName, data) {
+      function displayModuleData(moduleName, data, groupedData, groups) {
         const container = document.getElementById('module-content');
         
         if (data.length === 0) {
@@ -359,11 +416,15 @@
         const uniqueTopics = [...new Set(data.map(row => row[5]).filter(topic => topic))];
         const uniqueLocations = [...new Set(data.map(row => row[6]).filter(location => location))];
         const uniqueStaff = [...new Set(data.map(row => row[11]).filter(staff => staff))];
+        
+        // Get discipline from first row (column D, index 3)
+        const discipline = data[0] && data[0][3] ? data[0][3] : '';
 
-        const html = `
+        let html = `
           <div class="card module-card">
             <div class="module-header">
               <h3><i class="fas fa-book"></i> ${moduleName}</h3>
+              ${discipline ? `<p class="mb-0"><i class="fas fa-graduation-cap"></i> ${discipline}</p>` : ''}
             </div>
             
             <div class="module-stats">
@@ -380,50 +441,121 @@
                 <div class="stat-label">Topics</div>
               </div>
               <div class="stat-item">
-                <div class="stat-value">${uniqueStaff.length}</div>
-                <div class="stat-label">Staff</div>
-              </div>
-            </div>
-
-            <div class="card-body">
-              <h5 class="card-title">Timetable Details</h5>
-              <div class="table-responsive">
-                <table class="table table-striped timetable-table">
-                  <thead>
-                    <tr>
-                      <th>Period</th>
-                      <th>Week</th>
-                      <th>Topic</th>
-                      <th>Location</th>
-                      <th>Groups</th>
-                      <th>Hours</th>
-                      <th>Staff</th>
-                      <th>Room</th>
-                      <th>Day</th>
-                      <th>Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${data.map(row => `
-                      <tr>
-                        <td>${row[0] || '-'}</td>
-                        <td>${row[1] || '-'}</td>
-                        <td>${row[5] || '-'}</td>
-                        <td>${row[6] || '-'}</td>
-                        <td>${row[7] || '-'}</td>
-                        <td>${row[8] || '-'}</td>
-                        <td>${row[11] || '-'}</td>
-                        <td>${row[12] || '-'}</td>
-                        <td>${row[13] || '-'}</td>
-                        <td>${row[14] || '-'}</td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
+                <div class="stat-value">${groups ? groups.length : uniqueStaff.length}</div>
+                <div class="stat-label">${groups ? 'Groups' : 'Staff'}</div>
               </div>
             </div>
           </div>
         `;
+
+        // Add grouped sections
+        if (groupedData && groups) {
+          groups.forEach((group, index) => {
+            const groupSessions = groupedData[group];
+            const groupHours = groupSessions.reduce((sum, row) => sum + (parseFloat(row[8]) || 0), 0);
+            const groupId = `group-${index}`;
+            
+            html += `
+              <div class="card module-card mt-3">
+                <div class="card-header bg-light group-header" style="cursor: pointer;" onclick="toggleGroup('${groupId}')">
+                  <h5 class="mb-0 d-flex justify-content-between align-items-center">
+                    <span>
+                      <i class="fas fa-users"></i> Group: ${group}
+                      <span class="badge badge-primary ml-2">${groupSessions.length} sessions</span>
+                      <span class="badge badge-info ml-1">${groupHours} hours</span>
+                    </span>
+                    <i class="fas fa-chevron-down" id="icon-${groupId}"></i>
+                  </h5>
+                </div>
+                <div class="card-body p-0 group-content" id="${groupId}">
+                  <div class="table-responsive">
+                    <table class="table table-sm table-striped mb-0 timetable-table">
+                      <thead class="thead-light">
+                        <tr>
+                          <th>Period</th>
+                          <th>Week</th>
+                          <th>Event Order</th>
+                          <th>Topic</th>
+                          <th>Hours</th>
+                          <th>Staff</th>
+                          <th>Room</th>
+                          <th>Day</th>
+                          <th>Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${groupSessions.map((row, rowIndex) => `
+                          <tr>
+                            <td>${row[0] || '-'}</td>
+                            <td>${row[1] || '-'}</td>
+                            <td>${row[2] || '-'}</td>
+                            <td>${row[5] || '-'}</td>
+                            <td>${row[8] || '-'}</td>
+                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 11, 'staff')" data-original="${row[11] || ''}">
+                              ${row[11] || '-'}
+                            </td>
+                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 12, 'room')" data-original="${row[12] || ''}">
+                              ${row[12] || '-'}
+                            </td>
+                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 13, 'day')" data-original="${row[13] || ''}">
+                              ${row[13] || '-'}
+                            </td>
+                            <td class="editable-cell" onclick="editCell(this, ${rowIndex}, 14, 'time')" data-original="${row[14] || ''}">
+                              ${row[14] || '-'}
+                            </td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+        } else {
+          // Fallback to original table if no grouped data
+          html += `
+            <div class="card module-card mt-3">
+              <div class="card-body">
+                <h5 class="card-title">Timetable Details</h5>
+                <div class="table-responsive">
+                  <table class="table table-striped timetable-table">
+                    <thead>
+                      <tr>
+                        <th>Period</th>
+                        <th>Week</th>
+                        <th>Event Order</th>
+                        <th>Topic</th>
+                        <th>Groups</th>
+                        <th>Hours</th>
+                        <th>Staff</th>
+                        <th>Room</th>
+                        <th>Day</th>
+                        <th>Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${data.map(row => `
+                        <tr>
+                          <td>${row[0] || '-'}</td>
+                          <td>${row[1] || '-'}</td>
+                          <td>${row[2] || '-'}</td>
+                          <td>${row[5] || '-'}</td>
+                          <td>${row[7] || '-'}</td>
+                          <td>${row[8] || '-'}</td>
+                          <td>${row[11] || '-'}</td>
+                          <td>${row[12] || '-'}</td>
+                          <td>${row[13] || '-'}</td>
+                          <td>${row[14] || '-'}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          `;
+        }
         
         container.innerHTML = html;
       }
@@ -442,6 +574,216 @@
         document.getElementById('error').textContent = message;
         document.getElementById('error').style.display = 'block';
         document.getElementById('module-content').innerHTML = '';
+      }
+
+      function toggleGroup(groupId) {
+        const content = document.getElementById(groupId);
+        const icon = document.getElementById(`icon-${groupId}`);
+        
+        if (content.classList.contains('collapsed')) {
+          // Expand
+          content.classList.remove('collapsed');
+          icon.classList.remove('fa-chevron-right');
+          icon.classList.add('fa-chevron-down');
+        } else {
+          // Collapse
+          content.classList.add('collapsed');
+          icon.classList.remove('fa-chevron-down');
+          icon.classList.add('fa-chevron-right');
+        }
+      }
+
+      // Global variables for dropdown data
+      let staffList = [];
+      let roomList = [];
+      const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+      function loadDropdownData() {
+        // Load staff list
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response && response.success) {
+              staffList = response.staff;
+            }
+          })
+          .getStaffList();
+
+        // Load room list
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response && response.success) {
+              roomList = response.rooms;
+            }
+          })
+          .getRoomList();
+      }
+
+      function editCell(cell, rowIndex, columnIndex, fieldType) {
+        const originalValue = cell.getAttribute('data-original') || '';
+        const currentValue = cell.textContent.trim();
+        
+        // If already editing, don't do anything
+        if (cell.classList.contains('editing')) return;
+        
+        cell.classList.add('editing');
+        
+        let inputElement;
+        
+        switch(fieldType) {
+          case 'staff':
+            inputElement = createDropdown(staffList, currentValue, 'edit-dropdown');
+            break;
+          case 'room':
+            inputElement = createDropdown(roomList, currentValue, 'edit-dropdown');
+            break;
+          case 'day':
+            inputElement = createDropdown(daysOfWeek, currentValue, 'edit-dropdown');
+            break;
+          case 'time':
+            inputElement = createTimeInput(currentValue);
+            break;
+          default:
+            return;
+        }
+        
+        // Clear cell content and add input
+        cell.innerHTML = '';
+        cell.appendChild(inputElement);
+        
+        // Add blur event to save automatically
+        inputElement.addEventListener('blur', () => {
+          let newValue = inputElement.value;
+          
+          // Format time to HH:MM:SS if it's a time field
+          if (fieldType === 'time' && newValue) {
+            const timeParts = newValue.split(':');
+            if (timeParts.length >= 2) {
+              newValue = `${timeParts[0]}:${timeParts[1]}:00`;
+            }
+          }
+          
+          if (newValue !== originalValue) {
+            saveCell(cell, rowIndex, columnIndex, newValue);
+          } else {
+            cancelEdit(cell, originalValue);
+          }
+        });
+        
+        // Add enter key to save and escape key to cancel
+        inputElement.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            let newValue = inputElement.value;
+            
+            // Format time to HH:MM:SS if it's a time field
+            if (fieldType === 'time' && newValue) {
+              const timeParts = newValue.split(':');
+              if (timeParts.length >= 2) {
+                newValue = `${timeParts[0]}:${timeParts[1]}:00`;
+              }
+            }
+            
+            saveCell(cell, rowIndex, columnIndex, newValue);
+          } else if (e.key === 'Escape') {
+            cancelEdit(cell, originalValue);
+          }
+        });
+        
+        // Focus on input
+        inputElement.focus();
+      }
+
+      function createDropdown(options, currentValue, className) {
+        const select = document.createElement('select');
+        select.className = className;
+        
+        // Add empty option
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '-- Select --';
+        select.appendChild(emptyOption);
+        
+        // Add options
+        options.forEach(option => {
+          const optionElement = document.createElement('option');
+          optionElement.value = option;
+          optionElement.textContent = option;
+          if (option === currentValue) {
+            optionElement.selected = true;
+          }
+          select.appendChild(optionElement);
+        });
+        
+        return select;
+      }
+
+      function createTimeInput(currentValue) {
+        const input = document.createElement('input');
+        input.type = 'time';
+        input.className = 'edit-time';
+        
+        // Convert HH:MM:SS to HH:MM for the time input
+        if (currentValue && currentValue.includes(':')) {
+          const timeParts = currentValue.split(':');
+          if (timeParts.length >= 2) {
+            input.value = `${timeParts[0]}:${timeParts[1]}`;
+          } else {
+            input.value = currentValue;
+          }
+        } else {
+          input.value = currentValue || '';
+        }
+        
+        return input;
+      }
+
+      function saveCell(cell, rowIndex, columnIndex, newValue) {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response && response.success) {
+              cell.textContent = newValue || '-';
+              cell.setAttribute('data-original', newValue);
+              cell.classList.remove('editing');
+              // Show subtle success indicator
+              cell.style.backgroundColor = '#d4edda';
+              setTimeout(() => {
+                cell.style.backgroundColor = '';
+              }, 1000);
+            } else {
+              showError('Failed to save data: ' + (response.error || 'Unknown error'));
+            }
+          })
+          .withFailureHandler(function(error) {
+            showError('Error saving data: ' + error);
+          })
+          .saveEditedData(rowIndex, columnIndex, newValue);
+      }
+
+      function cancelEdit(cell, originalValue) {
+        cell.textContent = originalValue || '-';
+        cell.classList.remove('editing');
+      }
+
+      function showSuccessMessage(message) {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'alert alert-success alert-dismissible fade show';
+        successDiv.style.position = 'fixed';
+        successDiv.style.top = '20px';
+        successDiv.style.right = '20px';
+        successDiv.style.zIndex = '9999';
+        successDiv.innerHTML = `
+          ${message}
+          <button type="button" class="close" onclick="this.parentElement.remove()">
+            <span>&times;</span>
+          </button>
+        `;
+        document.body.appendChild(successDiv);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+          if (successDiv.parentElement) {
+            successDiv.remove();
+          }
+        }, 3000);
       }
 
       function debugConfiguration() {

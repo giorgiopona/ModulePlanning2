@@ -227,17 +227,75 @@ function getModuleData(moduleName) {
     
     // Convert all data to strings to ensure serialization works
     const serializedData = moduleData.map(row => 
-      row.map(cell => {
+      row.map((cell, cellIndex) => {
         if (cell === null || cell === undefined) return '';
-        if (cell instanceof Date) return cell.toISOString();
+        if (cell instanceof Date) {
+          // Handle time columns (column O, index 14)
+          if (cellIndex === 14) {
+            // Convert to HH:MM:SS format
+            const hours = cell.getHours().toString().padStart(2, '0');
+            const minutes = cell.getMinutes().toString().padStart(2, '0');
+            const seconds = cell.getSeconds().toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+          }
+          return cell.toISOString();
+        }
         return cell.toString();
       })
     );
     
+    // Group data by groups (column H, index 7)
+    const groupedData = {};
+    const allGroups = new Set();
+    
+    serializedData.forEach(row => {
+      const group = row[7] || 'No Group'; // Groups column
+      allGroups.add(group);
+      
+      if (!groupedData[group]) {
+        groupedData[group] = [];
+      }
+      groupedData[group].push(row);
+    });
+    
+    // Sort groups and sessions within each group
+    const sortedGroups = Array.from(allGroups).sort((a, b) => {
+      // Extract numbers from group names for numerical sorting
+      const numA = parseInt(a.toString().match(/\d+/)) || 0;
+      const numB = parseInt(b.toString().match(/\d+/)) || 0;
+      
+      if (numA !== numB) {
+        return numA - numB; // Sort numerically
+      }
+      
+      // If numbers are the same, sort alphabetically
+      return a.toString().localeCompare(b.toString());
+    });
+    const organizedData = {};
+    
+    sortedGroups.forEach(group => {
+      // Sort sessions within each group by week number, then by period
+      organizedData[group] = groupedData[group].sort((a, b) => {
+        const weekA = parseInt(a[1]) || 0; // Week Number column
+        const weekB = parseInt(b[1]) || 0;
+        if (weekA !== weekB) return weekA - weekB;
+        
+        const periodA = a[0] || ''; // Period column
+        const periodB = b[0] || '';
+        return periodA.localeCompare(periodB);
+      });
+    });
+    
     const response = {
       success: true,
       data: serializedData,
-      debug: debugInfo
+      groupedData: organizedData,
+      groups: sortedGroups,
+      debug: {
+        ...debugInfo,
+        totalGroups: sortedGroups.length,
+        groupsList: sortedGroups
+      }
     };
     
     return response;
@@ -246,6 +304,95 @@ function getModuleData(moduleName) {
       success: false,
       error: error.toString(),
       stack: error.stack
+    };
+  }
+}
+
+/**
+ * Get staff list from HR sheet
+ */
+function getStaffList() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const hrSheet = spreadsheet.getSheetByName('HR');
+    
+    if (!hrSheet) {
+      return {
+        success: false,
+        error: 'HR sheet not found'
+      };
+    }
+    
+    const staffData = hrSheet.getRange('A2:A').getValues();
+    const staffList = staffData
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map(row => row[0].toString().trim());
+    
+    return {
+      success: true,
+      staff: staffList
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Get room list from Facility sheet
+ */
+function getRoomList() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const facilitySheet = spreadsheet.getSheetByName('Facility');
+    
+    if (!facilitySheet) {
+      return {
+        success: false,
+        error: 'Facility sheet not found'
+      };
+    }
+    
+    const roomData = facilitySheet.getRange('A2:A').getValues();
+    const roomList = roomData
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map(row => row[0].toString().trim());
+    
+    return {
+      success: true,
+      rooms: roomList
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Save edited data to the spreadsheet
+ */
+function saveEditedData(rowIndex, columnIndex, newValue) {
+  try {
+    const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
+    
+    // Convert from 0-based index to 1-based and add header row offset
+    const actualRow = rowIndex + 2; // +2 because we start from A2 and rowIndex is 0-based
+    const actualColumn = columnIndex + 1; // +1 because columnIndex is 0-based
+    
+    sheet.getRange(actualRow, actualColumn).setValue(newValue);
+    
+    return {
+      success: true,
+      message: 'Data saved successfully'
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
     };
   }
 }
