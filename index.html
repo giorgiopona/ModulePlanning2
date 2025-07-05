@@ -260,7 +260,7 @@
         background-color: #f8f9fa !important;
       }
       
-
+      .selected-edit-cell { outline: 2px solid #007bff !important; background: #e3f0ff !important; }
 
       @media (max-width: 768px) {
         #sidebar {
@@ -319,6 +319,12 @@
           <button class="btn btn-outline-secondary btn-sm mt-2" onclick="debugConfiguration()">
             <i class="fas fa-bug"></i> Debug Configuration
           </button>
+          <button class="btn btn-outline-info btn-sm mt-2 ml-2" onclick="testDateCalculation()">
+            <i class="fas fa-calendar"></i> Test Calendar
+          </button>
+          <button class="btn btn-outline-warning btn-sm mt-2 ml-2" onclick="testSpecificDateCalculation()">
+            <i class="fas fa-calculator"></i> Test Date Calc
+          </button>
         </div>
 
         <div id="dropdown-data" style="display: none;">
@@ -348,6 +354,127 @@
       let allModulesWithPeriod = [];
       let currentPeriod = '';
       let currentModule = '';
+
+      // Global variable to store academic calendar
+      let academicCalendar = [];
+
+      // Multi-cell selection state
+      let selectedCells = new Set();
+
+      // Helper: get cell unique key
+      function getCellKey(cell) {
+        // Use UID and column index for uniqueness
+        const uid = cell.getAttribute('data-uid');
+        const col = cell.getAttribute('data-col');
+        return uid + ':' + col;
+      }
+
+      // Helper: clear all selections
+      function clearCellSelection() {
+        selectedCells.forEach(key => {
+          const el = document.querySelector(`[data-cell-key="${key}"]`);
+          if (el) el.classList.remove('selected-edit-cell');
+        });
+        selectedCells.clear();
+      }
+
+      // Add selection logic to editable cells
+      function handleCellClick(e) {
+        const cell = e.currentTarget;
+        const key = getCellKey(cell);
+        if (e.ctrlKey || e.metaKey) {
+          // Toggle selection
+          if (selectedCells.has(key)) {
+            cell.classList.remove('selected-edit-cell');
+            selectedCells.delete(key);
+          } else {
+            cell.classList.add('selected-edit-cell');
+            selectedCells.add(key);
+          }
+        } else if (e.shiftKey) {
+          // Shift+Click: select range (not implemented for simplicity)
+          // Could be added later
+          cell.classList.add('selected-edit-cell');
+          selectedCells.add(key);
+        } else {
+          // Single click: clear others, select this
+          clearCellSelection();
+          cell.classList.add('selected-edit-cell');
+          selectedCells.add(key);
+        }
+        e.stopPropagation();
+      }
+
+      // Keyboard event for delete/backspace and arrow navigation
+      window.addEventListener('keydown', function(e) {
+        // Arrow navigation only if a single editable cell is selected
+        if ((e.key.startsWith('Arrow')) && selectedCells.size === 1) {
+          const key = Array.from(selectedCells)[0];
+          const cell = document.querySelector(`[data-cell-key="${key}"]`);
+          if (!cell) return;
+          const tr = cell.closest('tr');
+          const col = parseInt(cell.getAttribute('data-col'));
+          let targetCell = null;
+          if (e.key === 'ArrowRight') {
+            // Next editable cell in the row
+            let nextCol = col;
+            do { nextCol++; } while (nextCol <= 14 && !tr.querySelector(`[data-col="${nextCol}"]`));
+            targetCell = tr.querySelector(`[data-col="${nextCol}"]`);
+          } else if (e.key === 'ArrowLeft') {
+            let prevCol = col;
+            do { prevCol--; } while (prevCol >= 11 && !tr.querySelector(`[data-col="${prevCol}"]`));
+            targetCell = tr.querySelector(`[data-col="${prevCol}"]`);
+          } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            // Find the index of the current row
+            const tbody = tr.parentElement;
+            const rows = Array.from(tbody.children);
+            const rowIndex = rows.indexOf(tr);
+            let targetRowIndex = e.key === 'ArrowDown' ? rowIndex + 1 : rowIndex - 1;
+            if (targetRowIndex >= 0 && targetRowIndex < rows.length) {
+              const targetRow = rows[targetRowIndex];
+              targetCell = targetRow.querySelector(`[data-col="${col}"]`);
+            }
+          }
+          if (targetCell) {
+            clearCellSelection();
+            targetCell.classList.add('selected-edit-cell');
+            selectedCells.add(getCellKey(targetCell));
+            targetCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }
+          e.preventDefault();
+          return;
+        }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCells.size > 0) {
+          selectedCells.forEach(key => {
+            const cell = document.querySelector(`[data-cell-key="${key}"]`);
+            if (cell) {
+              // Clear UI
+              cell.textContent = '-';
+              cell.setAttribute('data-original', '');
+              cell.classList.remove('editing');
+              cell.style.backgroundColor = '#f8d7da';
+              setTimeout(() => { cell.style.backgroundColor = ''; }, 500);
+              // If this is the Day cell, also clear the Date cell
+              const col = parseInt(cell.getAttribute('data-col'));
+              if (col === 13) {
+                const rowCells = cell.closest('tr').cells;
+                rowCells[rowCells.length - 1].textContent = '';
+              }
+              // Save in background
+              const uid = cell.getAttribute('data-uid');
+              const period = cell.closest('tr').cells[0].textContent.trim();
+              const weekNumber = cell.closest('tr').cells[1].textContent.trim();
+              google.script.run.withFailureHandler(function(error) {
+                showError('Error saving data: ' + error);
+              }).saveEditedDataWithDate(uid, col, '', period, weekNumber);
+            }
+          });
+          clearCellSelection();
+          e.preventDefault();
+        } else if (e.key === 'Escape') {
+          clearCellSelection();
+        }
+      });
 
       // Fetch all modules (with period) and populate module selector
       function loadModulesAndPeriods() {
@@ -438,6 +565,17 @@
       function renderWeekColoredRows(sessions) {
         let html = '';
         sessions.forEach(row => {
+          // Format the date if it exists (column P, index 15)
+          let dateDisplay = '-';
+          if (row[15] && row[15] instanceof Date) {
+            dateDisplay = row[15].toLocaleDateString();
+          } else if (row[15] && typeof row[15] === 'string') {
+            const date = new Date(row[15]);
+            if (!isNaN(date.getTime())) {
+              dateDisplay = date.toLocaleDateString();
+            }
+          }
+          // Editable columns: staff(11), room(12), day(13), time(14)
           html += `
             <tr style="background-color: #fff;">
               <td>${row[0] || '-'}</td>
@@ -445,18 +583,19 @@
               <td>${row[2] || '-'}</td>
               <td>${row[5] || '-'}</td>
               <td>${row[8] || '-'}</td>
-              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 11, 'staff')" data-original="${row[11] || ''}">
+              <td class="editable-cell" data-uid="${row[16] || ''}" data-col="11" data-cell-key="${row[16] || ''}:11" onclick="editCell(this, '${row[16] || ''}', 11, 'staff')" data-original="${row[11] || ''}">
                 ${row[11] || '-'}
               </td>
-              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 12, 'room')" data-original="${row[12] || ''}">
+              <td class="editable-cell" data-uid="${row[16] || ''}" data-col="12" data-cell-key="${row[16] || ''}:12" onclick="editCell(this, '${row[16] || ''}', 12, 'room')" data-original="${row[12] || ''}">
                 ${row[12] || '-'}
               </td>
-              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 13, 'day')" data-original="${row[13] || ''}">
+              <td class="editable-cell" data-uid="${row[16] || ''}" data-col="13" data-cell-key="${row[16] || ''}:13" onclick="editCell(this, '${row[16] || ''}', 13, 'day')" data-original="${row[13] || ''}">
                 ${row[13] || '-'}
               </td>
-              <td class="editable-cell" onclick="editCell(this, '${row[16] || ''}', 14, 'time')" data-original="${row[14] || ''}">
+              <td class="editable-cell" data-uid="${row[16] || ''}" data-col="14" data-cell-key="${row[16] || ''}:14" onclick="editCell(this, '${row[16] || ''}', 14, 'time')" data-original="${row[14] || ''}">
                 ${row[14] || '-'}
               </td>
+              <td>${dateDisplay}</td>
             </tr>
           `;
         });
@@ -541,6 +680,7 @@
                           <th>Room</th>
                           <th>Day</th>
                           <th>Time</th>
+                          <th>Date</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -573,6 +713,7 @@
                         <th>Room</th>
                         <th>Day</th>
                         <th>Time</th>
+                        <th>Date</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -586,6 +727,7 @@
         }
         
         container.innerHTML = html;
+        attachEditableCellListeners();
       }
 
       function showLoading() {
@@ -779,25 +921,54 @@
       }
 
       function saveCell(cell, uid, columnIndex, newValue) {
-        google.script.run
-          .withSuccessHandler(function(response) {
-            if (response && response.success) {
-              cell.textContent = newValue || '-';
-              cell.setAttribute('data-original', newValue);
-              cell.classList.remove('editing');
-              // Show subtle success indicator
-              cell.style.backgroundColor = '#d4edda';
-              setTimeout(() => {
-                cell.style.backgroundColor = '';
-              }, 1000);
-            } else {
-              showError('Failed to save data: ' + (response.error || 'Unknown error'));
-            }
-          })
-          .withFailureHandler(function(error) {
-            showError('Error saving data: ' + error);
-          })
-          .saveEditedData(uid, columnIndex, newValue);
+        // Get period and week from the current row data
+        const row = cell.closest('tr');
+        const cells = row.cells;
+        const period = cells[0] ? cells[0].textContent.trim() : '';
+        const weekNumber = cells[1] ? cells[1].textContent.trim() : '';
+
+        // If this is a day change (column 13), calculate and update date immediately, then save in background
+        if (columnIndex === 13) {
+          // Calculate date on the fly (if not clearing)
+          let calculatedDate = '';
+          if (newValue) {
+            calculatedDate = calculateDateFrontend(period, weekNumber, newValue);
+          }
+          // Always update the last cell (Date)
+          cells[cells.length - 1].textContent = calculatedDate;
+          // Update UI immediately, then save in background
+          cell.textContent = newValue || '-';
+          cell.setAttribute('data-original', newValue);
+          cell.classList.remove('editing');
+          cell.style.backgroundColor = '#d4edda';
+          setTimeout(() => { cell.style.backgroundColor = ''; }, 1000);
+          // Save in background (no UI blocking)
+          setTimeout(() => {
+            google.script.run
+              .withFailureHandler(function(error) {
+                showError('Error saving data: ' + error);
+              })
+              .saveEditedDataWithDate(uid, columnIndex, newValue, period, weekNumber);
+          }, 0);
+        } else {
+          // Use the original function for other fields
+          google.script.run
+            .withSuccessHandler(function(response) {
+              if (response && response.success) {
+                cell.textContent = newValue || '-';
+                cell.setAttribute('data-original', newValue);
+                cell.classList.remove('editing');
+                cell.style.backgroundColor = '#d4edda';
+                setTimeout(() => { cell.style.backgroundColor = ''; }, 1000);
+              } else {
+                showError('Failed to save data: ' + (response.error || 'Unknown error'));
+              }
+            })
+            .withFailureHandler(function(error) {
+              showError('Error saving data: ' + error);
+            })
+            .saveEditedData(uid, columnIndex, newValue);
+        }
       }
 
       function cancelEdit(cell, originalValue) {
@@ -852,13 +1023,111 @@
           .debugConfig();
       }
 
+      function testDateCalculation() {
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            const container = document.getElementById('module-content');
+            container.innerHTML = `
+              <div class="card">
+                <div class="card-header">
+                  <h5><i class="fas fa-calendar"></i> Academic Calendar Test</h5>
+                </div>
+                <div class="card-body">
+                  <pre>${JSON.stringify(response, null, 2)}</pre>
+                </div>
+              </div>
+            `;
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showError('Calendar test failed: ' + (error.message || error));
+          })
+          .getAcademicCalendar();
+      }
+
+      function testSpecificDateCalculation() {
+        // Test with sample data
+        const testData = {
+          period: 'Semester 1',
+          weekNumber: '1',
+          dayOfWeek: 'Monday'
+        };
+        
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            const container = document.getElementById('module-content');
+            container.innerHTML = `
+              <div class="card">
+                <div class="card-header">
+                  <h5><i class="fas fa-calendar"></i> Date Calculation Test</h5>
+                </div>
+                <div class="card-body">
+                  <h6>Test Data:</h6>
+                  <pre>${JSON.stringify(testData, null, 2)}</pre>
+                  <h6>Result:</h6>
+                  <pre>${JSON.stringify(response, null, 2)}</pre>
+                </div>
+              </div>
+            `;
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showError('Date calculation test failed: ' + (error.message || error));
+          })
+          .testDateCalculation(testData.period, testData.weekNumber, testData.dayOfWeek);
+      }
+
+      // Load Academic Calendar data on page load
+      function loadAcademicCalendar() {
+        google.script.run.withSuccessHandler(function(response) {
+          if (response && response.success && response.calendar) {
+            academicCalendar = response.calendar;
+          } else {
+            academicCalendar = [];
+          }
+        }).getAcademicCalendar();
+      }
+
+      // Calculate date on the frontend
+      function calculateDateFrontend(period, weekNumber, dayOfWeek) {
+        if (!period || !weekNumber || !dayOfWeek) return '';
+        const periodData = academicCalendar.find(item => item.period === period);
+        if (!periodData) return '';
+        const startDate = new Date(periodData.startDate);
+        const weekNum = parseInt(weekNumber);
+        if (isNaN(weekNum) || weekNum < 1) return '';
+        // Always use local date parts to avoid timezone issues
+        const base = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        base.setDate(base.getDate() + (weekNum - 1) * 7);
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const targetDayIndex = dayNames.indexOf(dayOfWeek);
+        if (targetDayIndex === -1) return '';
+        const currentDayIndex = base.getDay();
+        const daysToAdd = (targetDayIndex - currentDayIndex + 7) % 7;
+        base.setDate(base.getDate() + daysToAdd);
+        return base.toLocaleDateString('en-GB');
+      }
+
       // Attach event listeners on DOMContentLoaded
       window.addEventListener('DOMContentLoaded', function() {
         loadModulesAndPeriods();
         loadDropdownData();
+        loadAcademicCalendar();
         document.getElementById('periodFilter').addEventListener('change', onPeriodFilterChange);
         document.getElementById('moduleSelector').addEventListener('change', onModuleSelectorChange);
       });
+
+      // After rendering, attach click listeners to editable cells
+      function attachEditableCellListeners() {
+        document.querySelectorAll('.editable-cell').forEach(cell => {
+          cell.removeEventListener('click', handleCellClick);
+          cell.addEventListener('click', handleCellClick);
+        });
+      }
     </script>
   </body>
 </html> 
