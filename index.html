@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+      :root {
+        --primary-color: #10AD8E;
+        --primary-light: #4DBFA8;
+        --primary-dark: #0A8A73;
+        --accent-color: #E6F7F3;
+        --accent-dark: #B3E6D9;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #333;
+        overflow-x: hidden;
+      }
+      .wrapper {
+        display: flex;
+        width: 100%;
+        align-items: stretch;
+      }
+      #sidebar {
+        min-width: 240px;
+        max-width: 240px;
+        background-color: white;
+        border-right: 1px solid var(--accent-dark);
+        transition: all 0.3s;
+        height: 100vh;
+      }
+      #sidebar.toggled {
+        margin-left: -240px;
+      }
+      #sidebar .logo {
+        font-weight: bold;
+        font-size: 1.2rem;
+        margin-bottom: 20px;
+        padding: 20px;
+        color: var(--primary-color);
+      }
+      #sidebar .nav-link {
+        color: #333;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+        transition: all 0.3s ease;
+      }
+      #sidebar .nav-link:hover {
+        background-color: var(--accent-color);
+        color: var(--primary-color);
+      }
+      #sidebar .nav-link.active {
+        background-color: var(--primary-color);
+        font-weight: bold;
+        color: white;
+      }
+      .main-content {
+        flex-grow: 1;
+        padding: 30px;
+        background-color: #fff;
+        width: 100%;
+        overflow-y: auto;
+      }
+      .main-content h1 {
+        font-size: 1.8rem;
+        font-weight: 400;
+        margin-bottom: 30px;
+        color: var(--primary-color);
+      }
+      .card {
+        border: 1px solid var(--accent-dark);
+        box-shadow: 0 2px 4px rgba(16, 173, 142, 0.1);
+        margin-bottom: 20px;
+      }
+      .card-title {
+        color: var(--primary-color);
+        font-weight: 600;
+      }
+      .btn-primary {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+      }
+      .btn-primary:hover {
+        background-color: var(--primary-dark);
+        border-color: var(--primary-dark);
+      }
+      .btn-secondary {
+        background-color: var(--primary-light);
+        border-color: var(--primary-light);
+        color: white;
+      }
+      .btn-secondary:hover {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+        color: white;
+      }
+      #sidebar-toggle {
+        display: none;
+      }
+      .module-card {
+        border-left: 4px solid var(--primary-color);
+        transition: all 0.3s ease;
+      }
+      .module-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(16, 173, 142, 0.2);
+      }
+      .module-header {
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+        color: white;
+        padding: 15px;
+        border-radius: 5px 5px 0 0;
+      }
+      .module-stats {
+        display: flex;
+        justify-content: space-around;
+        padding: 15px;
+        background-color: var(--accent-color);
+      }
+      .stat-item {
+        text-align: center;
+      }
+      .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--primary-color);
+      }
+      .stat-label {
+        font-size: 0.8rem;
+        color: #666;
+        text-transform: uppercase;
+      }
+      .timetable-table {
+        font-size: 0.9rem;
+      }
+      .timetable-table th {
+        background-color: var(--accent-color);
+        color: var(--primary-color);
+        font-weight: 600;
+        border: none;
+      }
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: var(--primary-color);
+      }
+      .error {
+        color: #dc3545;
+        padding: 20px;
+        text-align: center;
+      }
+      .module-selector {
+        margin-bottom: 30px;
+      }
+      .module-badge {
+        background-color: var(--accent-color);
+        color: var(--primary-color);
+        padding: 5px 10px;
+        border-radius: 15px;
+        margin: 2px;
+        display: inline-block;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .module-badge:hover {
+        background-color: var(--primary-color);
+        color: white;
+      }
+      .module-badge.active {
+        background-color: var(--primary-color);
+        color: white;
+      }
+
+      @media (max-width: 768px) {
+        #sidebar {
+          margin-left: -240px;
+        }
+        #sidebar.toggled {
+          margin-left: 0;
+        }
+        #sidebar-toggle {
+          display: block;
+          position: fixed;
+          top: 15px;
+          left: 15px;
+          z-index: 1000;
+        }
+        .main-content {
+          padding-top: 70px;
+        }
+        .module-stats {
+          flex-direction: column;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="sidebar" id="sidebar">
+        <div class="logo">ADE UK</div>
+        <ul class="nav flex-column p-3">
+          <li class="nav-item">
+            <a class="nav-link active" href="#">Module Planning</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="main-content">
+        <button class="btn btn-secondary" id="sidebar-toggle">☰</button>
+        <h1><i class="fas fa-calendar-alt"></i> Module Planning</h1>
+        
+        <div class="module-selector">
+          <h5>Select Module:</h5>
+          <div id="module-buttons"></div>
+          <button class="btn btn-outline-secondary btn-sm mt-2" onclick="debugConfiguration()">
+            <i class="fas fa-bug"></i> Debug Configuration
+          </button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+          <i class="fas fa-spinner fa-spin fa-2x"></i>
+          <p>Loading module data...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="module-content"></div>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+      document.getElementById('sidebar-toggle').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.toggle('toggled');
+      });
+
+      // Load modules on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        loadModules();
+      });
+
+      function loadModules() {
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            if (response && response.success) {
+              displayModuleButtons(response.modules);
+              // Show debug info if available
+              if (response.debug) {
+                console.log('Debug info:', response.debug);
+                const container = document.getElementById('module-content');
+                container.innerHTML = `
+                  <div class="card">
+                    <div class="card-header">
+                      <h5><i class="fas fa-info-circle"></i> Data Processing Info</h5>
+                    </div>
+                    <div class="card-body">
+                      <p><strong>Total rows:</strong> ${response.debug.totalRows}</p>
+                      <p><strong>Non-empty rows:</strong> ${response.debug.nonEmptyRows}</p>
+                      <p><strong>Unique modules found:</strong> ${response.debug.uniqueModulesCount || response.debug.uniqueModules.length}</p>
+                      <p><strong>Modules:</strong> ${response.debug.uniqueModulesList ? response.debug.uniqueModulesList.join(', ') : response.debug.uniqueModules.join(', ')}</p>
+                    </div>
+                  </div>
+                `;
+              }
+            } else {
+              const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
+              showError('Failed to load modules: ' + errorMsg);
+              if (response && response.stack) {
+                console.error('Stack trace:', response.stack);
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showError('Error loading modules: ' + (error.message || error));
+          })
+          .getUniqueModules();
+      }
+
+      function displayModuleButtons(modules) {
+        const container = document.getElementById('module-buttons');
+        container.innerHTML = '';
+        
+        modules.forEach(module => {
+          const badge = document.createElement('span');
+          badge.className = 'module-badge';
+          badge.textContent = module;
+          badge.onclick = () => loadModuleData(module);
+          container.appendChild(badge);
+        });
+      }
+
+      function loadModuleData(moduleName) {
+        // Update active button
+        document.querySelectorAll('.module-badge').forEach(badge => {
+          badge.classList.remove('active');
+        });
+        event.target.classList.add('active');
+
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            if (response && response.success) {
+              displayModuleData(moduleName, response.data);
+              // Show debug info if available
+              if (response.debug) {
+                console.log('Module data debug:', response.debug);
+                const container = document.getElementById('module-content');
+                const debugDiv = document.createElement('div');
+                debugDiv.className = 'card mt-3';
+                debugDiv.innerHTML = `
+                  <div class="card-header">
+                    <h6><i class="fas fa-bug"></i> Module Data Debug</h6>
+                  </div>
+                  <div class="card-body">
+                    <p><strong>Requested module:</strong> ${response.debug.requestedModule}</p>
+                    <p><strong>Total rows scanned:</strong> ${response.debug.totalRows}</p>
+                    <p><strong>Matching rows found:</strong> ${response.debug.matchingRows}</p>
+                    <p><strong>Sample data:</strong></p>
+                    <pre>${JSON.stringify(response.debug.sampleData, null, 2)}</pre>
+                  </div>
+                `;
+                container.appendChild(debugDiv);
+              }
+            } else {
+              const errorMsg = response && response.error ? response.error : 'Unknown error occurred';
+              showError('Failed to load module data: ' + errorMsg);
+              if (response && response.stack) {
+                console.error('Stack trace:', response.stack);
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showError('Error loading module data: ' + (error.message || error));
+          })
+          .getModuleData(moduleName);
+      }
+
+      function displayModuleData(moduleName, data) {
+        const container = document.getElementById('module-content');
+        
+        if (data.length === 0) {
+          container.innerHTML = '<div class="alert alert-info">No data found for this module.</div>';
+          return;
+        }
+
+        // Calculate statistics
+        const totalHours = data.reduce((sum, row) => sum + (parseFloat(row[8]) || 0), 0);
+        const uniqueTopics = [...new Set(data.map(row => row[5]).filter(topic => topic))];
+        const uniqueLocations = [...new Set(data.map(row => row[6]).filter(location => location))];
+        const uniqueStaff = [...new Set(data.map(row => row[11]).filter(staff => staff))];
+
+        const html = `
+          <div class="card module-card">
+            <div class="module-header">
+              <h3><i class="fas fa-book"></i> ${moduleName}</h3>
+            </div>
+            
+            <div class="module-stats">
+              <div class="stat-item">
+                <div class="stat-value">${data.length}</div>
+                <div class="stat-label">Sessions</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${totalHours}</div>
+                <div class="stat-label">Total Hours</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${uniqueTopics.length}</div>
+                <div class="stat-label">Topics</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${uniqueStaff.length}</div>
+                <div class="stat-label">Staff</div>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <h5 class="card-title">Timetable Details</h5>
+              <div class="table-responsive">
+                <table class="table table-striped timetable-table">
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Week</th>
+                      <th>Topic</th>
+                      <th>Location</th>
+                      <th>Groups</th>
+                      <th>Hours</th>
+                      <th>Staff</th>
+                      <th>Room</th>
+                      <th>Day</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${data.map(row => `
+                      <tr>
+                        <td>${row[0] || '-'}</td>
+                        <td>${row[1] || '-'}</td>
+                        <td>${row[5] || '-'}</td>
+                        <td>${row[6] || '-'}</td>
+                        <td>${row[7] || '-'}</td>
+                        <td>${row[8] || '-'}</td>
+                        <td>${row[11] || '-'}</td>
+                        <td>${row[12] || '-'}</td>
+                        <td>${row[13] || '-'}</td>
+                        <td>${row[14] || '-'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        container.innerHTML = html;
+      }
+
+      function showLoading() {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('module-content').innerHTML = '';
+        document.getElementById('error').style.display = 'none';
+      }
+
+      function hideLoading() {
+        document.getElementById('loading').style.display = 'none';
+      }
+
+      function showError(message) {
+        document.getElementById('error').textContent = message;
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('module-content').innerHTML = '';
+      }
+
+      function debugConfiguration() {
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(response) {
+            hideLoading();
+            const container = document.getElementById('module-content');
+            container.innerHTML = `
+              <div class="card">
+                <div class="card-header">
+                  <h5><i class="fas fa-bug"></i> Debug Information</h5>
+                </div>
+                <div class="card-body">
+                  <pre>${JSON.stringify(response, null, 2)}</pre>
+                </div>
+              </div>
+            `;
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showError('Debug failed: ' + (error.message || error));
+          })
+          .debugConfig();
+      }
+    </script>
+  </body>
+</html> 
